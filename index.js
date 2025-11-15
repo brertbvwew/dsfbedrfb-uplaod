@@ -75,39 +75,41 @@ app.get("/image-to-video", async (req, res) => {
 // 🔥 MOVIE DOWNLOAD PROXY (HIDE REAL URL)
 // --------------------------------------------------
 
-// STEP 1: CLIENT CALLS THIS → RETURNS PROTECTED LINK
+// ---------------------------
+// STEP 1: Generate hidden link
+// ---------------------------
 app.get("/api/download/:id", async (req, res) => {
   try {
     const movieId = req.params.id;
     const movieUrl = `https://cineverse.name.ng/movie/${movieId}`;
 
-    // fetch html
-    const html = await axios.get(movieUrl).then(r => r.data);
+    // Fetch the movie page HTML
+    const { data: html } = await axios.get(movieUrl, {
+      headers: { "User-Agent": "Mozilla/5.0" }
+    });
 
-    // find mp4 or mkv
-    const match = html.match(/https:\/\/[^\s"'<>]+\.mp4/) ||
-                  html.match(/https:\/\/[^\s"'<>]+\.mkv/);
-
+    // Find first mp4 or mkv link
+    const match = html.match(/https:\/\/[^\s"'<>]+?\.(mp4|mkv)/);
     if (!match) return res.status(404).json({ error: "Download link not found" });
 
     const realUrl = match[0];
 
-    // Encode real link safely
+    // Encode safely
     const token = Buffer.from(realUrl).toString("base64");
 
-    // return hidden endpoint
     res.json({
       download: `/api/proxy/${token}`
     });
 
   } catch (err) {
-    console.error(err);
+    console.error("Download link error:", err.message);
     res.status(500).json({ error: "Server Error" });
   }
 });
 
-
-// STEP 2: REAL DOWNLOAD STREAM (HIDES ORIGINAL URL)
+// ---------------------------
+// STEP 2: Proxy the actual download
+// ---------------------------
 app.get("/api/proxy/:token", async (req, res) => {
   try {
     const realUrl = Buffer.from(req.params.token, "base64").toString("utf8");
@@ -115,12 +117,12 @@ app.get("/api/proxy/:token", async (req, res) => {
     const response = await axios.get(realUrl, { responseType: "stream" });
 
     res.setHeader("Content-Type", response.headers["content-type"]);
-    res.setHeader("Content-Disposition", "attachment");
+    res.setHeader("Content-Disposition", `attachment; filename="${path.basename(realUrl)}"`);
 
     response.data.pipe(res);
 
   } catch (err) {
-    console.error(err);
+    console.error("Proxy error:", err.message);
     res.status(500).json({ error: "Proxy Error" });
   }
 });
