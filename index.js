@@ -74,34 +74,57 @@ app.get("/image-to-video", async (req, res) => {
 // --------------------------------------------------
 // 🔥 MOVIE DOWNLOAD PROXY (HIDE REAL URL)
 // --------------------------------------------------
-// /api/download/:id
+// ---------------------------
+// STEP 1: Generate hidden link
+// ---------------------------
 app.get("/api/download/:id", async (req, res) => {
   try {
     const movieId = req.params.id;
+    const movieUrl = `https://cineverse.name.ng/movie/${movieId}`;
 
-    // Use the official sources API
-    const { data } = await axios.get(`https://cdn2.cineverse.name.ng/api/sources/${movieId}`, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        Accept: "*/*",
-        Origin: "https://cineverse.name.ng",
-        Referer: "https://cineverse.name.ng/"
-      }
+    // Fetch the movie page HTML
+    const { data: html } = await axios.get(movieUrl, {
+      headers: { "User-Agent": "Mozilla/5.0" }
     });
 
-    const sources = data?.data?.processedSources;
-    if (!sources || sources.length === 0) {
-      return res.status(404).json({ error: "Sources not found" });
-    }
+    // Find first mp4 or mkv link
+    const match = html.match(/https:\/\/[^\s"'<>]+?\.(mp4|mkv)/);
+    if (!match) return res.status(404).send("Download link not found");
 
-    // Pick 1080p if available
-    const best = sources.find(s => s.quality === 1080) || sources[0];
-    const token = Buffer.from(best.downloadUrl).toString("base64");
+    const realUrl = match[0];
 
-    res.json({ download: `/api/proxy/${token}` });
+    // Redirect directly to proxy with token
+    const token = Buffer.from(realUrl).toString("base64");
+    res.redirect(`/api/proxy/${token}`);
+
   } catch (err) {
     console.error("Download link error:", err.message);
-    res.status(500).json({ error: "Server Error" });
+    res.status(500).send("Server Error");
+  }
+});
+
+// ---------------------------
+// STEP 2: Proxy the actual download
+// ---------------------------
+app.get("/api/proxy/:token", async (req, res) => {
+  try {
+    const realUrl = Buffer.from(req.params.token, "base64").toString("utf8");
+
+    // Stream file from the real URL
+    const response = await axios.get(realUrl, { responseType: "stream" });
+
+    // Set headers to force browser download
+    res.setHeader("Content-Type", "application/octet-stream");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${path.basename(realUrl)}"`
+    );
+
+    response.data.pipe(res);
+
+  } catch (err) {
+    console.error("Proxy error:", err.message);
+    res.status(500).send("Proxy Error");
   }
 });
 
