@@ -71,33 +71,6 @@ app.get("/image-to-video", async (req, res) => {
 });
 
 
-// ---------------------------
-// STEP 1: Direct Cineverse download
-// ---------------------------
-app.get("/api/download/:id", async (req, res) => {
-  try {
-    const movieId = req.params.id;
-    const movieUrl = `https://cineverse.name.ng/movie/${movieId}`;
-
-    // Fetch the movie page HTML
-    const { data: html } = await axios.get(movieUrl, {
-      headers: { "User-Agent": "Mozilla/5.0" }
-    });
-
-    // Find the first mp4 or mkv link
-    const match = html.match(/https:\/\/[^\s"'<>]+?\.(mp4|mkv)/);
-    if (!match) return res.status(404).send("Download link not found");
-
-    const realUrl = match[0];
-
-    // Redirect user directly to the Cineverse file
-    res.redirect(realUrl);
-
-  } catch (err) {
-    console.error("Download link error:", err.message);
-    res.status(500).send("Server Error");
-  }
-});
 
 // --------------------------------------------------
 // 🚀 START SERVER
