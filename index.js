@@ -1,8 +1,7 @@
-
 const express = require("express");
 const multer = require("multer");
 const path = require("path");
-const fs = require("fs");22
+const fs = require("fs");
 const axios = require("axios");
 const { exec } = require("child_process");
 
@@ -11,7 +10,6 @@ const port = process.env.PORT || 4000;
 
 const uploadDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
@@ -23,7 +21,10 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// === File Upload Endpoint ===
+
+// --------------------------------------------------
+// 📁 FILE UPLOAD ENDPOINT
+// --------------------------------------------------
 app.post("/upload", upload.single("file"), (req, res) => {
   if (!req.file) return res.status(400).json({ ok: false, error: "No file uploaded" });
 
@@ -31,11 +32,12 @@ app.post("/upload", upload.single("file"), (req, res) => {
   res.json({ ok: true, fileUrl });
 });
 
-// === Serve Uploaded Files ===
 app.use("/uploads", express.static(uploadDir));
 
 
-// === Image → Video Endpoint (File or URL) ===
+// --------------------------------------------------
+// 🎬 IMAGE → VIDEO ENDPOINT 
+// --------------------------------------------------
 app.get("/image-to-video", async (req, res) => {
   try {
     const imageUrl = req.query.url;
@@ -45,7 +47,6 @@ app.get("/image-to-video", async (req, res) => {
     const filename = `remote_${Date.now()}${ext}`;
     const imagePath = path.join(uploadDir, filename);
 
-    // Download image
     const response = await axios.get(imageUrl, { responseType: "arraybuffer" });
     fs.writeFileSync(imagePath, response.data);
 
@@ -62,6 +63,7 @@ app.get("/image-to-video", async (req, res) => {
       const videoUrl = `${req.protocol}://${req.get("host")}/uploads/${path.basename(outputFile)}`;
       res.send(`<p>✅ Video created! <a href="${videoUrl}" target="_blank">Click here to view/download</a></p>`);
     });
+
   } catch (err) {
     console.error(err);
     res.status(500).send("Internal server error");
@@ -69,8 +71,64 @@ app.get("/image-to-video", async (req, res) => {
 });
 
 
-// === Start Server ===
+// --------------------------------------------------
+// 🔥 MOVIE DOWNLOAD PROXY (HIDE REAL URL)
+// --------------------------------------------------
+
+// STEP 1: CLIENT CALLS THIS → RETURNS PROTECTED LINK
+app.get("/api/download/:id", async (req, res) => {
+  try {
+    const movieId = req.params.id;
+    const movieUrl = `https://cineverse.name.ng/movie/${movieId}`;
+
+    // fetch html
+    const html = await axios.get(movieUrl).then(r => r.data);
+
+    // find mp4 or mkv
+    const match = html.match(/https:\/\/[^\s"'<>]+\.mp4/) ||
+                  html.match(/https:\/\/[^\s"'<>]+\.mkv/);
+
+    if (!match) return res.status(404).json({ error: "Download link not found" });
+
+    const realUrl = match[0];
+
+    // Encode real link safely
+    const token = Buffer.from(realUrl).toString("base64");
+
+    // return hidden endpoint
+    res.json({
+      download: `/api/proxy/${token}`
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server Error" });
+  }
+});
+
+
+// STEP 2: REAL DOWNLOAD STREAM (HIDES ORIGINAL URL)
+app.get("/api/proxy/:token", async (req, res) => {
+  try {
+    const realUrl = Buffer.from(req.params.token, "base64").toString("utf8");
+
+    const response = await axios.get(realUrl, { responseType: "stream" });
+
+    res.setHeader("Content-Type", response.headers["content-type"]);
+    res.setHeader("Content-Disposition", "attachment");
+
+    response.data.pipe(res);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Proxy Error" });
+  }
+});
+
+
+// --------------------------------------------------
+// 🚀 START SERVER
+// --------------------------------------------------
 app.listen(port, () => {
-  console.log(`✅ File uploader running at http://localhost:${port}`);
-  console.log(`📂 Uploaded files available at http://localhost:${port}/uploads/`);
+  console.log(`Server running http://localhost:${port}`);
 });
