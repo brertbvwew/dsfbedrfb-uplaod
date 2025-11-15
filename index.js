@@ -74,32 +74,26 @@ app.get("/image-to-video", async (req, res) => {
 // --------------------------------------------------
 // 🔥 MOVIE DOWNLOAD PROXY (HIDE REAL URL)
 // --------------------------------------------------
-
-// ---------------------------
-// STEP 1: Generate hidden link
-// ---------------------------
 app.get("/api/download/:id", async (req, res) => {
   try {
     const movieId = req.params.id;
     const movieUrl = `https://cineverse.name.ng/movie/${movieId}`;
 
-    // Fetch the movie page HTML
     const { data: html } = await axios.get(movieUrl, {
       headers: { "User-Agent": "Mozilla/5.0" }
     });
 
-    // Find first mp4 or mkv link
-    const match = html.match(/https:\/\/[^\s"'<>]+?\.(mp4|mkv)/);
-    if (!match) return res.status(404).json({ error: "Download link not found" });
+    // Extract sources JSON
+    const jsonMatch = html.match(/sources\s*:\s*(\{.*?\})\s*,\s*player/i);
+    if (!jsonMatch) return res.status(404).json({ error: "Sources not found" });
 
-    const realUrl = match[0];
+    const sources = JSON.parse(jsonMatch[1]);
+    const bestSource = sources.processedSources.find(s => s.quality === 1080) || sources.processedSources[0];
+    if (!bestSource) return res.status(404).json({ error: "No downloadable source" });
 
-    // Encode safely
-    const token = Buffer.from(realUrl).toString("base64");
+    const token = Buffer.from(bestSource.downloadUrl).toString("base64");
 
-    res.json({
-      download: `/api/proxy/${token}`
-    });
+    res.json({ download: `/api/proxy/${token}` });
 
   } catch (err) {
     console.error("Download link error:", err.message);
@@ -107,13 +101,9 @@ app.get("/api/download/:id", async (req, res) => {
   }
 });
 
-// ---------------------------
-// STEP 2: Proxy the actual download
-// ---------------------------
 app.get("/api/proxy/:token", async (req, res) => {
   try {
     const realUrl = Buffer.from(req.params.token, "base64").toString("utf8");
-
     const response = await axios.get(realUrl, { responseType: "stream" });
 
     res.setHeader("Content-Type", response.headers["content-type"]);
